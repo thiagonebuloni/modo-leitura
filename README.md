@@ -13,7 +13,11 @@ Cole o link de qualquer artigo e leia **só o texto principal** — sem anúncio
 - Extração com Mozilla Readability (engine do Firefox Reader View)
 - Temas claro / sépia / escuro (página inteira, salvos no `localStorage`)
 - Tamanho de fonte ajustável (A-/A+), toggle de imagens, tempo de leitura
-- Fallback automático via Jina Reader quando o site bloqueia robôs (403)
+- Fallback automático via Jina Reader quando o site bloqueia robôs (403) — pedimos o **HTML real** da
+  página (`X-Return-Format: html`); sem esse header o Jina devolve markdown com o preâmbulo
+  `Title:/URL Source:/Markdown Content:` e o texto aparece "sujo"
+- Leitura maleável: texto em 72ch (acompanha A-/A+) e tabelas largas com rolagem horizontal
+
 - Proteções: anti-SSRF (bloqueia rede interna), rate limit (30 req/min/IP), limite de 5MB, HTML sanitizado, security headers
 
 ## Deploy (Vercel, plano gratuito)
