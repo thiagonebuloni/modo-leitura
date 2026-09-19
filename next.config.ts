@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // jsdom precisa rodar como Node "de verdade" na function (require nativo
+  // de 'ws', 'canvas' etc.). Sem isso a Vercel quebra o bundle com
+  // ERR_REQUIRE_ESM em /api/ler e até em rotas que o importam (slug, metadata).
+  serverExternalPackages: ["jsdom"],
   async headers() {
     return [
       {
