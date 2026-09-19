@@ -157,6 +157,39 @@ const ALLOWED_TAGS = [
   "dl", "dt", "dd", "sub", "sup",
 ];
 
+/**
+ * Tabelas largas ganham um bloco próprio com rolagem horizontal, para não
+ * estourar a largura da página em telas pequenas (o texto continua legível).
+ * Feito DEPOIS do sanitize: o <div> wrapper não precisa estar em ALLOWED_TAGS.
+ */
+function wrapWideTables(html: string): string {
+  return html
+    .replace(/<table(\s[^>]*)?>/gi, (match) => `<div class="table-wrap">${match}`)
+    .replace(/<\/table>/gi, "</table></div>");
+}
+
+/**
+ * Sanitiza o HTML do artigo e reescreve links absolutos para o formato interno
+ * /dominio/caminho (para abrirem dentro do webapp, na mesma aba).
+ * Usado tanto pela extração normal quanto pelos fallbacks de texto.
+ */
+function sanitizeArticleHtml(html: string): string {
+  return sanitizeHtml(html, {
+    allowedTags: ALLOWED_TAGS,
+    allowedAttributes: {
+      a: ["href", "title"],
+      img: ["src", "alt", "title", "loading"],
+      blockquote: ["cite"],
+      code: ["class"],
+      pre: ["class"],
+    },
+    allowedSchemes: ["http", "https", "mailto"],
+  }).replace(/href="(https?:\/\/[^"]*)"/gi, (_m, absolute: string) => {
+    if (/^(#|mailto:|tel:|javascript:)/i.test(absolute)) return `href="${absolute}"`;
+    return `href="/${absolute.replace(/^https?:\/\//i, "")}"`;
+  });
+}
+
 export function isValidHttpUrl(value: string): boolean {
   try {
     assertPublicHttpUrl(value);
@@ -216,7 +249,7 @@ function pickMeta(doc: Document, names: string[]): string | null {
 function buildArticleFromHtml(
   rawHtml: string,
   finalUrl: string,
-  opts: { sourceNote?: string } = {}
+  opts: { sourceNote?: string; titleFallback?: string } = {}
 ): ExtractedArticle | null {
   // VirtualConsole silencioso: páginas reais costumam ter CSS inválido/
   // incompleto e o JSDOM loga "Could not parse CSS stylesheet" como jsdomError.
@@ -278,12 +311,12 @@ function buildArticleFromHtml(
 
   return {
     title:
-      (parsed.title?.trim() || "Sem título") +
+      (parsed.title?.trim() || opts.titleFallback?.trim() || "Sem título") +
       (opts.sourceNote ? ` ${opts.sourceNote}` : ""),
     byline: parsed.byline?.trim() || null,
     siteName: parsed.siteName?.trim() || metaSite,
     excerpt: parsed.excerpt?.trim() || "",
-    content: clean,
+    content: wrapWideTables(clean),
     textContent,
     length: parsed.length ?? textContent.length,
     wordCount,
@@ -292,6 +325,29 @@ function buildArticleFromHtml(
     publishedTime: metaPublished,
     image: metaImage ? new URL(metaImage, new URL(finalUrl).origin).toString() : null,
   };
+}
+
+/** Escapa texto para injeção segura em HTML (usado nos fallbacks de texto). */
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * No formato texto/markdown o Jina devolve um preâmbulo com metadados:
+ *   Title: ...
+ *   URL Source: ...
+ *   Markdown Content:
+ *     <conteúdo de verdade>
+ * Aqui separamos o título do conteúdo, para não despejar o preâmbulo na tela.
+ */
+function stripJinaPreamble(body: string): { title: string | null; text: string } {
+  const titleMatch = body.match(/^\s*Title:\s*(.+)$/m);
+  const contentMatch = body.match(/^\s*(?:Markdown Content|Content):\s*$/m);
+  const text =
+    contentMatch && contentMatch.index !== undefined
+      ? body.slice(contentMatch.index + contentMatch[0].length)
+      : body;
+  return { title: titleMatch ? titleMatch[1].trim() : null, text: text.trim() };
 }
 
 /**
@@ -313,6 +369,9 @@ async function tryJinaReader(targetUrl: string): Promise<ExtractedArticle | null
       redirect: "follow",
       headers: {
         Accept: "text/html,application/xhtml+xml,*/*",
+        // Sem este header o Jina responde MARKDOWN (com o preâmbulo
+        // "Title: / URL Source: / Markdown Content:") em vez do HTML real.
+        "X-Return-Format": "html",
         "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
         ...(process.env.JINA_API_KEY
           ? { Authorization: `Bearer ${process.env.JINA_API_KEY}` }
@@ -320,20 +379,29 @@ async function tryJinaReader(targetUrl: string): Promise<ExtractedArticle | null
       },
     });
     if (!res.ok) return null;
-    const html = await readBodyCapped(res, MAX_HTML_BYTES);
-    if (!html || html.length < 500) return null;
-    // O Jina devolve markdown/texto; embrulha em <article> para o Readability
-    // tratar como corpo principal (fallback: usa o texto cru).
+    const body = await readBodyCapped(res, MAX_HTML_BYTES);
+    if (!body || body.length < 500) return null;
+
+    // Caminho 1 — o Jina devolveu o HTML real da página: roda a mesma pipeline
+    // da extração normal (Readability + sanitize), preservando título e imagens.
+    if (/<html[\s>]|<body[\s>]|<article[\s>]|<p[\s>]/i.test(body)) {
+      const fromHtml = buildArticleFromHtml(body, targetUrl, {
+        sourceNote: "(via leitor reserva)",
+      });
+      if (fromHtml) return fromHtml;
+    }
+
+    // Caminho 2 — veio markdown/texto puro: descarta o preâmbulo do Jina.
+    const { title: jinaTitle, text: plain } = stripJinaPreamble(body);
+    if (!plain) return null;
     const article = buildArticleFromHtml(
-      `<html><head><title></title></head><body><article><pre>${html
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")}</pre></article></body></html>`,
-      targetUrl
+      `<html><head><title>${escapeHtml(jinaTitle ?? "")}</title></head><body><article><pre>${escapeHtml(plain)}</pre></article></body></html>`,
+      targetUrl,
+      { titleFallback: jinaTitle ?? undefined, sourceNote: "(via leitor reserva)" }
     );
     if (article) return article;
-    // Último recurso: texto cru do Jina como parágrafos
-    const paragraphs = html
+    // Último recurso: o texto cru do Jina virou parágrafos.
+    const paragraphs = plain
       .split(/\n{2,}/)
       .map((p) => p.trim())
       .filter((p) => p.length > 40)
@@ -341,10 +409,10 @@ async function tryJinaReader(targetUrl: string): Promise<ExtractedArticle | null
       .map((p) => `<p>${sanitizeHtml(p, { allowedTags: [], allowedAttributes: {} })}</p>`)
       .join("\n");
     if (!paragraphs) return null;
-    const textContent = html.trim();
+    const textContent = plain;
     const wordCount = textContent.split(/\s+/).filter(Boolean).length;
     return {
-      title: "Artigo (via leitor reserva)",
+      title: jinaTitle?.trim() || "Artigo (via leitor reserva)",
       byline: null,
       siteName: new URL(targetUrl).hostname.replace(/^www\./, ""),
       excerpt: "",

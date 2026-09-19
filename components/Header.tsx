@@ -17,7 +17,7 @@ interface Props {
 export default function Header(p: Props) {
   return (
     <header className="theme-header sticky top-0 z-40 border-b backdrop-blur">
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-4">
+      <div className="mx-auto flex w-full max-w-5xl items-center gap-3 px-4 py-4">
         <button type="button" onClick={p.onHome} className="flex cursor-pointer items-center gap-2 text-left">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-stone-900 text-lg text-stone-50">
             📖

@@ -170,7 +170,7 @@ export default function Reader({ initialUrl, legacyUrl }: ReaderProps) {
         onToggleImages={() => setShowImages((v) => !v)}
       />
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-24">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-24">
         {!done && (
           <section className="pt-14 sm:pt-20">
             <h1 className="text-center text-3xl font-extrabold tracking-tight sm:text-4xl">
