@@ -34,8 +34,9 @@ depender de pacotes ESM-only (`@exodus/bytes`, `css-tree`, `parse5`...), então
 `generateMetadata`), devolvendo HTTP 500 até na home.
 
 Por isso o `package.json` fixa **`jsdom@^26.1.0`**, cuja árvore é 100% CommonJS. A extração
-produz resultado idêntico ao jsdom 30 (validado na Wikipedia, HN, MDN, example.com) e ainda
-é mais rápida.
+produz resultado **idêntico** ao jsdom 30 (validado na Wikipedia — 172.114 caracteres nos
+dois —, example.com, GNU e Hacker News); o tempo de execução ficou equivalente, às vezes
+um pouco maior, às vezes menor, sem impacto perceptível no uso.
 
 Se quiser usar jsdom 30, a alternativa é habilitar a flag na Vercel em
 **Settings → Environment Variables**:
