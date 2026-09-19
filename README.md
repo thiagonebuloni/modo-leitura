@@ -25,6 +25,36 @@ Cole o link de qualquer artigo e leia **só o texto principal** — sem anúncio
 
 Sem variáveis obrigatórias — funciona no plano Hobby.
 
+### ⚠️ Não atualize o jsdom para 27+
+
+A Vercel **desabilita por padrão** o `require()` de ES Modules. O jsdom **27+** passou a
+depender de pacotes ESM-only (`@exodus/bytes`, `css-tree`, `parse5`...), então
+`require("jsdom")` lança `ERR_REQUIRE_ESM` **no carregamento da function** — isso derruba
+`/api/ler` e qualquer rota que importe `lib/extract` (a rota `/[...slug]` e o
+`generateMetadata`), devolvendo HTTP 500 até na home.
+
+Por isso o `package.json` fixa **`jsdom@^26.1.0`**, cuja árvore é 100% CommonJS. A extração
+produz resultado idêntico ao jsdom 30 (validado na Wikipedia, HN, MDN, example.com) e ainda
+é mais rápida.
+
+Se quiser usar jsdom 30, a alternativa é habilitar a flag na Vercel em
+**Settings → Environment Variables**:
+
+```
+NODE_OPTIONS=--experimental-require-module
+```
+
+(`engines: { "node": "24.x" }` já está fixado no `package.json` para garantir o runtime certo.)
+
+### Como reproduzir o bug localmente
+
+```bash
+npm run build
+NODE_OPTIONS=--no-experimental-require-module npx next start -p 3100
+# simula exatamente a Vercel; se jsdom for 27+, /api/ler responde 500
+```
+
+
 ## Rodar local
 
 ```bash
