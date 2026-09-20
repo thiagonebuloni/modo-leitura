@@ -28,7 +28,7 @@ export default function Header(p: Props) {
           </span>
         </button>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-          <div className="theme-card flex items-center rounded-full border p-1">
+          <div className="theme-card flex items-center rounded-full border p-1 gap-1">
             {(["light", "sepia", "dark"] as Theme[]).map((t) => (
               <button
                 key={t}
