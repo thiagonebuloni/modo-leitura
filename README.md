@@ -19,6 +19,8 @@ Cole o link de qualquer artigo e leia **só o texto principal** — sem anúncio
 - Fallback final via RemovePaywall → archive.today: se o site e o Jina falharem, consultamos os
   espelhos do archive.today (`archive.is/newest/<url>`) atrás de um snapshot do artigo. Sem snapshot,
   erro amigável (ex.: DataDome da WSJ + paywall)
+- Última via: Wayback Machine (`archive.org/wayback/available`) — cobertura diferente do
+  archive.today; rate limit (429) é ignorado sem quebrar o fluxo
 - Interstícios anti-robô (DataDome, Cloudflare etc.) devolvidos com status 200 são detectados e
   tratados como bloqueio — nunca viram "artigo" com HTML cru na tela
 - Leitura maleável: texto em 72ch (acompanha A-/A+) e tabelas largas com rolagem horizontal

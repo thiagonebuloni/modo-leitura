@@ -506,6 +506,57 @@ async function tryRemovePaywall(targetUrl: string): Promise<ExtractedArticle | n
   return null;
 }
 
+/**
+ * Última via: Wayback Machine (archive.org), que tem cobertura diferente do
+ * archive.today. Consulta a API de disponibilidade e busca o snapshot mais
+ * próximo. 429/sem snapshot/erro = null (best-effort).
+ */
+async function tryWaybackMachine(targetUrl: string): Promise<ExtractedArticle | null> {
+  try {
+    assertPublicHttpUrl(targetUrl);
+  } catch {
+    return null;
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const api = await fetch(
+      `https://archive.org/wayback/available?url=${encodeURIComponent(targetUrl)}`,
+      { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" } }
+    );
+    if (!api.ok) return null; // ex.: 429 (rate limit) — segue sem Wayback
+    const snap = ((await api.json()) as {
+      archived_snapshots?: { closest?: { available?: boolean; timestamp?: string } };
+    })?.archived_snapshots?.closest;
+    if (!snap?.available || !snap.timestamp) return null;
+
+    const snapUrl = `https://web.archive.org/web/${snap.timestamp}/${targetUrl}`;
+    const res = await fetch(snapUrl, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,*/*",
+        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+      },
+    });
+    if (!res.ok) return null;
+    const body = await readBodyCapped(res, MAX_HTML_BYTES);
+    if (!body || body.length < 500 || looksLikeBotBlock(body)) return null;
+    // URLs relativas da snapshot resolvem contra a página do arquivo (res.url).
+    const article = buildArticleFromHtml(body, res.url || snapUrl, {
+      sourceNote: "(via Wayback Machine)",
+    });
+    if (article) return { ...article, url: targetUrl };
+    return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function extractArticle(targetUrl: string): Promise<ExtractedArticle> {
   // Valida ANTES de qualquer fetch — incluindo redirect, que é revalidado abaixo.
   assertPublicHttpUrl(targetUrl);
@@ -569,7 +620,10 @@ export async function extractArticle(targetUrl: string): Promise<ExtractedArticl
       // Fallback: Jina Reader (https://r.jina.ai/URL) renderiza a página
       // com um browser real e devolve o conteúdo. Sem chave, o plano
       // gratuito permite poucas requisições — se estourar, avisa.
-      const fallback = (await tryJinaReader(targetUrl)) ?? (await tryRemovePaywall(targetUrl));
+      const fallback =
+        (await tryJinaReader(targetUrl)) ??
+        (await tryRemovePaywall(targetUrl)) ??
+        (await tryWaybackMachine(targetUrl));
       if (fallback) return fallback;
       if (res.status === 429) {
         throw new Error(
@@ -595,7 +649,10 @@ export async function extractArticle(targetUrl: string): Promise<ExtractedArticl
   // WAFs (DataDome etc.) às vezes servem o challenge com status 200.
   // Tenta o leitor reserva; se ele também cair no challenge, erro amigável.
   if (looksLikeBotBlock(rawHtml)) {
-    const fallback = (await tryJinaReader(targetUrl)) ?? (await tryRemovePaywall(targetUrl));
+    const fallback =
+      (await tryJinaReader(targetUrl)) ??
+      (await tryRemovePaywall(targetUrl)) ??
+      (await tryWaybackMachine(targetUrl));
     if (fallback) return fallback;
     throw new Error(
       "Esse site bloqueou a leitura automática com uma verificação anti-robô (o conteúdo pode exigir assinatura). Não há como exibir o texto aqui."
