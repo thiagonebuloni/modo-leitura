@@ -88,6 +88,23 @@ export default function Reader({ initialUrl, legacyUrl }: ReaderProps) {
     } catch {}
   }, [showImages, prefsReady]);
 
+  // Paridade mobile/desktop: <meta name="theme-color"> acompanha o tema
+  // (barra de endereço do Android/iOS) e o <body> recebe o mesmo fundo da
+  // página (evita flash branco no overscroll/rubber-band do celular).
+  useEffect(() => {
+    if (!prefsReady) return;
+    const bg =
+      theme === "dark" ? "#0c0a09" : theme === "sepia" ? "#c3a961" : "#e6e9ef";
+    let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "theme-color";
+      document.head.appendChild(meta);
+    }
+    meta.content = bg;
+    document.body.style.backgroundColor = bg;
+  }, [theme, prefsReady]);
+
   useEffect(() => {
     if (status !== "done") return;
     const onScroll = () => {
@@ -199,10 +216,10 @@ export default function Reader({ initialUrl, legacyUrl }: ReaderProps) {
             )}
 
             {status === "error" && error && (
-              <div className="mx-auto mt-8 max-w-xl rounded-2xl border border-red-200 bg-red-50 p-5 text-[14px] leading-relaxed text-red-900">
+              <div className="theme-danger mx-auto mt-8 max-w-xl rounded-2xl border p-5 text-[14px] leading-relaxed">
                 <p className="font-semibold">Não foi possível ler essa página</p>
                 <p className="mt-1">{error}</p>
-                <p className="mt-2 text-red-700/80">
+                <p className="mt-2 opacity-80">
                   Dica: funciona melhor com posts de blog, notícias e artigos.
                 </p>
               </div>

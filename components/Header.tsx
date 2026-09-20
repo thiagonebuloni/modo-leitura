@@ -19,8 +19,8 @@ export default function Header(p: Props) {
     <header className="theme-header sticky top-0 z-40 border-b backdrop-blur">
       <div className="mx-auto flex w-full max-w-5xl items-center gap-3 px-4 py-4">
         <button type="button" onClick={p.onHome} className="flex cursor-pointer items-center gap-2 text-left">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-stone-900 text-lg text-stone-50">
-            📖
+          <span className="theme-logo grid h-9 w-9 place-items-center rounded-xl text-lg">
+            📰
           </span>
           <span className="leading-tight">
             <span className="block text-[15px] font-bold tracking-tight">Modo Leitura</span>
@@ -36,9 +36,9 @@ export default function Header(p: Props) {
                 title={t === "light" ? "Claro" : t === "sepia" ? "Sépia" : "Escuro"}
                 aria-pressed={p.theme === t}
                 onClick={() => p.onTheme(t)}
-                className={`h-7 w-7 cursor-pointer rounded-full border text-sm transition ${
-                  p.theme === t ? "border-stone-900 ring-2 ring-stone-900/20" : "border-transparent hover:border-stone-300"
-                } ${t === "light" ? "bg-[#fdfcf9]" : t === "sepia" ? "bg-[#c3a961]" : "bg-stone-900"}`}
+                className={`h-7 w-7 cursor-pointer rounded-full border transition ${
+                  p.theme === t ? "theme-swatch-active" : "border-transparent hover:border-[var(--page-border)]"
+                } ${t === "light" ? "bg-[#eff1f5]" : t === "sepia" ? "bg-[#c3a961]" : "bg-stone-900"}`}
               >
                 <span className="sr-only">{t}</span>
               </button>

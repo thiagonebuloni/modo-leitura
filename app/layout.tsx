@@ -21,6 +21,8 @@ export const metadata: Metadata = {
   title: "Modo Leitura — leia sem distrações",
   description:
     "Cole o link de qualquer artigo e leia apenas o texto principal, sem anúncios, pop-ups ou distrações.",
+  // Primeiro paint no mobile (depois o Reader atualiza conforme o tema).
+  other: { "theme-color": "#e6e9ef" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

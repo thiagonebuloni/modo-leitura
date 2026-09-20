@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f5f0;
-  --foreground: #1c1917;
+  /* Padrão = tema claro (Catppuccin Latte): mantle + text */
+  --background: #e6e9ef;
+  --foreground: #4c4f69;
 }
 
 @theme inline {
@@ -23,27 +24,40 @@ body {
 }
 
 /* ---- Tema da página inteira (controlado pelos botões do header) ---- */
+/*
+ * Claro = Catppuccin Latte (https://catppuccin.com/palette)
+ *   base #eff1f5 · mantle #e6e9ef · crust #dce0e8 · text #4c4f69
+ *   subtext0 #6c6f85 · surface0 #ccd0da · blue #1e66f5
+ * `color-scheme` é o que impede o mobile (Chrome Android "tema escuro
+ * automático", Safari) de inverter/escurecer a página por conta própria —
+ * sem ele o mesmo tema aparecia diferente no celular e no desktop.
+ */
 .page-theme {
-  --page-bg: #f7f5f0;
-  --page-fg: #1c1917;
-  --page-muted: #78716c;
-  --page-card: #ffffff;
-  --page-border: #e7e2d9;
-  --page-input-bg: #ffffff;
-  --page-accent: #1c1917;
-  --page-accent-fg: #fafaf9;
-  --page-code-bg: #f1ede4;
-  --page-link: #1d4ed8;
-  --article-bg: #fdfcf9;
-  --article-fg: #1c1917;
-  --article-muted: #78716c;
-  --article-border: #e7e2d9;
-  --article-link: #1d4ed8;
-  --article-code-bg: #f1ede4;
+  color-scheme: light;
+  --page-bg: #e6e9ef; /* mantle */
+  --page-fg: #4c4f69; /* text */
+  --page-muted: #6c6f85; /* subtext0 */
+  --page-card: #eff1f5; /* base */
+  --page-border: #ccd0da; /* surface0 */
+  --page-input-bg: #eff1f5; /* base */
+  --page-accent: #4c4f69; /* text */
+  --page-accent-fg: #eff1f5; /* base */
+  --page-code-bg: #dce0e8; /* crust */
+  --page-link: #1e66f5; /* blue */
+  --page-danger: #d20f39; /* red */
+  --page-danger-bg: #f0d8de;
+  --page-danger-fg: #9c1428;
+  --article-bg: #eff1f5; /* base */
+  --article-fg: #4c4f69; /* text */
+  --article-muted: #6c6f85; /* subtext0 */
+  --article-border: #ccd0da; /* surface0 */
+  --article-link: #1e66f5; /* blue */
+  --article-code-bg: #dce0e8; /* crust */
   background: var(--page-bg);
   color: var(--page-fg);
 }
 .page-theme[data-theme="dark"] {
+  color-scheme: dark;
   --page-bg: #0c0a09;
   --page-fg: #e7e5e4;
   --page-muted: #a8a29e;
@@ -60,8 +74,12 @@ body {
   --article-border: #292524;
   --article-link: #93c5fd;
   --article-code-bg: #1c1917;
+  --page-danger: #f38ba8;
+  --page-danger-bg: #2c1a20;
+  --page-danger-fg: #f5a9bf;
 }
 .page-theme[data-theme="sepia"] {
+  color-scheme: light;
   --page-bg: #c3a961;
   --page-fg: #5a4224;
   --page-muted: #8a7a5c;
@@ -72,6 +90,9 @@ body {
   --page-accent-fg: #fbf4e1;
   --page-code-bg: #eadfc3;
   --page-link: #92400e;
+  --page-danger: #a1472f;
+  --page-danger-bg: #f1dfd3;
+  --page-danger-fg: #7d2f1e;
   --article-bg: #f4ecd8;
   --article-fg: #433422;
   --article-muted: #8a7a5c;
@@ -80,8 +101,25 @@ body {
   --article-code-bg: #eadfc3;
 }
 
+.page-theme .theme-logo {
+  background: var(--page-accent);
+  color: var(--page-accent-fg);
+}
+.page-theme .theme-swatch-active {
+  border-color: var(--page-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--page-accent) 25%, transparent);
+}
+.page-theme .theme-danger {
+  background: var(--page-danger-bg);
+  border-color: var(--page-danger);
+  color: var(--page-danger-fg);
+}
+
 /* Componentes da página usam as variáveis do tema */
 .page-theme .theme-header {
+  /* Fallback sólido p/ navegadores sem color-mix (mobiles antigos): sem isso
+     o header ficava transparente só no celular — diferença mobile×desktop. */
+  background: var(--page-bg);
   background: color-mix(in srgb, var(--page-bg) 90%, transparent);
   border-color: var(--page-border);
 }
@@ -117,6 +155,31 @@ body {
 }
 .page-theme .theme-progress {
   background: var(--page-accent);
+}
+/* Ícone do topo: inverte fg/bg do tema (antes era stone-900 fixo e sumia no escuro) */
+.page-theme .theme-logo {
+  background: var(--page-fg);
+  color: var(--page-bg);
+}
+/* Bolinhas de tema: seleção via aria-pressed (visível nos 3 temas) */
+.page-theme .theme-swatch {
+  border-color: transparent;
+}
+.page-theme .theme-swatch:hover {
+  border-color: var(--page-muted);
+}
+.page-theme .theme-swatch[aria-pressed="true"] {
+  border-color: var(--page-fg);
+  box-shadow: 0 0 0 2px var(--page-border);
+}
+/* Caixa de erro de extração: tema-aware (antes era bg-red-50 fixo) */
+.page-theme .theme-alert {
+  background: var(--page-danger-bg);
+  border-color: var(--page-danger);
+  color: var(--page-fg);
+}
+.page-theme .theme-alert-hint {
+  color: var(--page-danger-fg);
 }
 
 /* ---- Tipografia do conteúdo extraído ---- */
