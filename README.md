@@ -16,6 +16,11 @@ Cole o link de qualquer artigo e leia **só o texto principal** — sem anúncio
 - Fallback automático via Jina Reader quando o site bloqueia robôs (403) — pedimos o **HTML real** da
   página (`X-Return-Format: html`); sem esse header o Jina devolve markdown com o preâmbulo
   `Title:/URL Source:/Markdown Content:` e o texto aparece "sujo"
+- Fallback final via RemovePaywall → archive.today: se o site e o Jina falharem, consultamos os
+  espelhos do archive.today (`archive.is/newest/<url>`) atrás de um snapshot do artigo. Sem snapshot,
+  erro amigável (ex.: DataDome da WSJ + paywall)
+- Interstícios anti-robô (DataDome, Cloudflare etc.) devolvidos com status 200 são detectados e
+  tratados como bloqueio — nunca viram "artigo" com HTML cru na tela
 - Leitura maleável: texto em 72ch (acompanha A-/A+) e tabelas largas com rolagem horizontal
 
 - Proteções: anti-SSRF (bloqueia rede interna), rate limit (30 req/min/IP), limite de 5MB, HTML sanitizado, security headers

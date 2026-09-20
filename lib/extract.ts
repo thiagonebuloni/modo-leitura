@@ -114,7 +114,7 @@ async function fetchWithRedirectGuard(
     if (Number.isFinite(declared) && declared > maxBytes) {
       try {
         await res.arrayBuffer().catch(() => null);
-      } catch {}
+      } catch { }
       throw new Error("Página muito grande para processar (limite de 5MB).");
     }
     return res;
@@ -132,14 +132,14 @@ async function readBodyCapped(res: Response, maxBytes: number): Promise<string> 
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  for (;;) {
+  for (; ;) {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.byteLength;
     if (total > maxBytes) {
       try {
         await reader.cancel();
-      } catch {}
+      } catch { }
       throw new Error("Página muito grande para processar (limite de 5MB).");
     }
     chunks.push(value);
@@ -166,28 +166,6 @@ function wrapWideTables(html: string): string {
   return html
     .replace(/<table(\s[^>]*)?>/gi, (match) => `<div class="table-wrap">${match}`)
     .replace(/<\/table>/gi, "</table></div>");
-}
-
-/**
- * Sanitiza o HTML do artigo e reescreve links absolutos para o formato interno
- * /dominio/caminho (para abrirem dentro do webapp, na mesma aba).
- * Usado tanto pela extração normal quanto pelos fallbacks de texto.
- */
-function sanitizeArticleHtml(html: string): string {
-  return sanitizeHtml(html, {
-    allowedTags: ALLOWED_TAGS,
-    allowedAttributes: {
-      a: ["href", "title"],
-      img: ["src", "alt", "title", "loading"],
-      blockquote: ["cite"],
-      code: ["class"],
-      pre: ["class"],
-    },
-    allowedSchemes: ["http", "https", "mailto"],
-  }).replace(/href="(https?:\/\/[^"]*)"/gi, (_m, absolute: string) => {
-    if (/^(#|mailto:|tel:|javascript:)/i.test(absolute)) return `href="${absolute}"`;
-    return `href="/${absolute.replace(/^https?:\/\//i, "")}"`;
-  });
 }
 
 export function isValidHttpUrl(value: string): boolean {
@@ -255,7 +233,7 @@ function buildArticleFromHtml(
   // incompleto e o JSDOM loga "Could not parse CSS stylesheet" como jsdomError.
   // Isso não afeta a extração — só polui o console / overlay de dev.
   const virtualConsole = new VirtualConsole();
-  virtualConsole.on("jsdomError", () => {});
+  virtualConsole.on("jsdomError", () => { });
 
   const dom = new JSDOM(rawHtml, { url: finalUrl, virtualConsole });
   const doc = dom.window.document;
@@ -351,6 +329,22 @@ function stripJinaPreamble(body: string): { title: string | null; text: string }
 }
 
 /**
+ * Detecta páginas-interstício de anti-robô/paywall (DataDome, Cloudflare,
+ * PerimeterX...). Elas chegam com status 200 e um HTML minúsculo de challenge
+ * que depende de JS. Sem executar JS nunca viram artigo — e se passarem como
+ * "conteúdo", o leitor exibe lixo (o HTML cru do challenge na tela).
+ */
+const BOT_BLOCK_PATTERN =
+  /captcha-delivery\.com|datadome|cf-challenge|challenge-platform|cdn-cgi\/(?:challenge|scripts\/captcha)|just a moment|checking your browser|verify you are a human|enable javascript and cookies|please enable js and disable any ad blocker|attention required|px-captcha|perimeterx|geo\.captcha/i;
+
+function looksLikeBotBlock(html: string): boolean {
+  // Páginas de challenge são minúsculas ( uns poucos KB); páginas reais são
+  // grandes. O teto evita falso positivo em artigo que só *cita* "just a moment".
+  if (html.length > 50_000) return false;
+  return BOT_BLOCK_PATTERN.test(html);
+}
+
+/**
  * Fallback via Jina Reader: busca https://r.jina.ai/<url> que renderiza a
  * página num browser real e retorna o HTML/texto. Retorna null se falhar.
  * (Alvo revalidado: nunca pede ao Jina um endereço interno.)
@@ -381,6 +375,9 @@ async function tryJinaReader(targetUrl: string): Promise<ExtractedArticle | null
     if (!res.ok) return null;
     const body = await readBodyCapped(res, MAX_HTML_BYTES);
     if (!body || body.length < 500) return null;
+    // O Jina pode devolver 200 com a página de challenge do site-alvo
+    // (ex.: DataDome da WSJ). Isso NÃO é conteúdo — falha como qualquer outra.
+    if (looksLikeBotBlock(body)) return null;
 
     // Caminho 1 — o Jina devolveu o HTML real da página: roda a mesma pipeline
     // da extração normal (Readability + sanitize), preservando título e imagens.
@@ -430,6 +427,83 @@ async function tryJinaReader(targetUrl: string): Promise<ExtractedArticle | null
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * Fallback via RemovePaywall (https://www.removepaywall.com/search?url=...):
+ * o site hoje é uma casca client-side cujo destino real é o archive.today
+ * ("Try archive.today" -> archive.is/newest/<url>). Seguimos esse fluxo
+ * server-side: extraímos os destinos de arquivo (newest/oldest) expostos
+ * pela página de busca e consultamos os espelhos do archive.today em busca
+ * de um snapshot. Retorna null se não houver snapshot ou se falhar.
+ */
+async function tryRemovePaywall(targetUrl: string): Promise<ExtractedArticle | null> {
+  try {
+    assertPublicHttpUrl(targetUrl);
+  } catch {
+    return null;
+  }
+
+  // 1) Descobre os destinos de arquivo expostos pela página do RemovePaywall.
+  const candidates: string[] = [];
+  const shellController = new AbortController();
+  const shellTimeout = setTimeout(() => shellController.abort(), 12000);
+  try {
+    const shell = await fetch(
+      `https://www.removepaywall.com/search?url=${encodeURIComponent(targetUrl)}`,
+      {
+        signal: shellController.signal,
+        headers: { "User-Agent": "Mozilla/5.0", Accept: "text/html,*/*" },
+      }
+    );
+    if (shell.ok) {
+      const html = await readBodyCapped(shell, MAX_HTML_BYTES);
+      for (const base of html.match(/https?:\/\/archive\.[\w.]+\/(?:newest|oldest)\//gi) ?? []) {
+        candidates.push(base + targetUrl);
+      }
+    }
+  } catch {
+    // casca indisponível: segue com os espelhos padrão
+  } finally {
+    clearTimeout(shellTimeout);
+  }
+  // Espelhos padrão do archive.today (a URL exata pode não estar na casca).
+  for (const host of ["archive.is", "archive.ph", "archive.li"]) {
+    candidates.push(`https://${host}/newest/${targetUrl}`);
+  }
+
+  // 2) Consulta cada candidato; 404 = sem snapshot; 429 = rate limit.
+  for (const candidate of candidates) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const res = await fetch(candidate, {
+        signal: controller.signal,
+        redirect: "follow",
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml,*/*",
+          "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+        },
+      });
+      if (!res.ok) continue;
+      const body = await readBodyCapped(res, MAX_HTML_BYTES);
+      if (!body || body.length < 500 || looksLikeBotBlock(body)) continue;
+      // URLs relativas do snapshot devem ser resolvidas contra a página do
+      // arquivo (res.url), não contra o site original — senão viram links
+      // quebrados no domínio do site bloqueado.
+      const article = buildArticleFromHtml(body, res.url || candidate, {
+        sourceNote: "(via archive.today)",
+      });
+      if (article) return { ...article, url: targetUrl };
+    } catch {
+      // próximo candidato
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  return null;
 }
 
 export async function extractArticle(targetUrl: string): Promise<ExtractedArticle> {
@@ -495,7 +569,7 @@ export async function extractArticle(targetUrl: string): Promise<ExtractedArticl
       // Fallback: Jina Reader (https://r.jina.ai/URL) renderiza a página
       // com um browser real e devolve o conteúdo. Sem chave, o plano
       // gratuito permite poucas requisições — se estourar, avisa.
-      const fallback = await tryJinaReader(targetUrl);
+      const fallback = (await tryJinaReader(targetUrl)) ?? (await tryRemovePaywall(targetUrl));
       if (fallback) return fallback;
       if (res.status === 429) {
         throw new Error(
@@ -503,7 +577,7 @@ export async function extractArticle(targetUrl: string): Promise<ExtractedArticl
         );
       }
       throw new Error(
-        "Esse site bloqueou a leitura automática (erro 403) e o leitor reserva também não conseguiu. É uma proteção anti-robô do portal — comum em UOL, Globo e Folha. O conteúdo pode exigir assinatura."
+        "Esse site bloqueou a leitura automática (erro 401/403) e o leitor reserva também não conseguiu."
       );
     }
     if (res.status === 404) {
@@ -518,6 +592,15 @@ export async function extractArticle(targetUrl: string): Promise<ExtractedArticl
   }
 
   const rawHtml = await readBodyCapped(res, MAX_HTML_BYTES);
+  // WAFs (DataDome etc.) às vezes servem o challenge com status 200.
+  // Tenta o leitor reserva; se ele também cair no challenge, erro amigável.
+  if (looksLikeBotBlock(rawHtml)) {
+    const fallback = (await tryJinaReader(targetUrl)) ?? (await tryRemovePaywall(targetUrl));
+    if (fallback) return fallback;
+    throw new Error(
+      "Esse site bloqueou a leitura automática com uma verificação anti-robô (o conteúdo pode exigir assinatura). Não há como exibir o texto aqui."
+    );
+  }
   const finalUrl = res.url || targetUrl;
 
   const article = buildArticleFromHtml(rawHtml, finalUrl);
